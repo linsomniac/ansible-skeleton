@@ -1,0 +1,13 @@
+---
+- name: User sean
+  user: name=sean
+          comment="Sean Reifschneider"
+          groups=sudo append=yes
+          shell=/bin/bash
+          password="x"
+
+- name: SSH Key for sean
+  authorized_key: user=sean key="{{ item }}"
+
+  with_file:
+    - ssh_keys/sean.pub

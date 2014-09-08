@@ -1,0 +1,80 @@
+#!/usr/bin/python
+
+DOCUMENTATION = '''
+---
+module: encryptedfile
+short_description: Install files that are sourced from encrypted version.
+description:
+    - Install files that are sourced from encrypted version.
+author: Sean Reifschneider
+requirements:
+    - C(openssl) package
+options:
+  path:
+    description:
+      - Destination of unencrypted data.
+    required: true
+    default: []
+  password:
+    description:
+      - Password used for decryption.
+    required: true
+    default: null
+'''
+
+EXAMPLES = '''
+- encryptedfile: src=config_file.bf dest=/etc/config_file
+'''
+
+from ansible.module_utils.basic import *  # noqa
+import os
+
+
+def is_newer_than(src, dest):
+    return (
+        not os.path.exists(dest)
+        or os.path.getmtime(src) > os.path.getmtime(dest))
+
+
+def main():
+    module = AnsibleModule(
+        argument_spec=dict(
+            path=dict(aliases=['dest', 'name'], required=True),
+            password=dict(required=True),
+        ),
+        add_file_common_args=True,
+        supports_check_mode=True,
+    )
+
+    path = os.path.expanduser(module.params['path'])
+    if not os.path.exists(path):
+        module.fail_json(msg="Source %s does not exist" % path)
+
+    dest = path.rstrip('.bf')
+    if dest == path:
+        module.fail_json(
+            msg='Expected path "%s" to have .bf extension' % path)
+
+    changed = False
+
+    if is_newer_than(path, dest):
+        (keyfile_fd, keyfile_name) = tempfile.mkstemp()
+        os.write(keyfile_fd, module.params['password'])
+        os.close(keyfile_fd)
+
+        cmd = [
+            'openssl', 'enc', '-bf', '-d', '-in', path, '-out', dest,
+            '-kfile', keyfile_name]
+        rc, out, error = module.run_command(cmd, check_rc=True)
+        if error:
+            module.fail_json(
+                msg='OpenSSL command failed with output: "%s"' % error)
+        os.remove(keyfile_name)
+        changed = True
+
+    file_args = module.load_file_common_arguments(module.params)
+    file_args['path'] = dest
+    changed = module.set_file_attributes_if_different(file_args, changed)
+    module.exit_json(dest=dest, changed=changed)
+
+main()

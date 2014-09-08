@@ -1,0 +1,2 @@
+This directory can contain Ansible modules that extend functionality but
+aren't built in.

@@ -1,0 +1,8 @@
+---
+- name: Install NTP package
+  apt: name=ntp state=installed
+
+- name: Set up ntpd.conf
+  action: template src=ntp.conf dest=/etc/ntp.conf owner=root group=root mode=644
+  notify:
+    - Restart ntp

@@ -1,0 +1,20 @@
+---
+#- name: Common host configuration
+#  hosts: all
+#  roles:
+#    - common
+#
+#- name: Group-webservers
+#  hosts: webservers
+#  roles:
+#    - group-webserver
+#
+#- name: Host-web1
+#  hosts: web1
+#  roles:
+#    - host-web1
+#
+#- name: Host-web2
+#  hosts: web2
+#  roles:
+#    - host-web2

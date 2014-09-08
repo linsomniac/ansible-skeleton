@@ -1,0 +1,5 @@
+# Ansible hosts, with optional [groups]
+#
+#[webservers]
+#web1.example.com
+#web2.example.com

@@ -1,0 +1,6 @@
+---
+- name: Restart ntp
+  service: name=ntp state=restarted
+
+- name: Update vim alternatives
+  command: update-alternatives --set editor /usr/bin/vim.nox

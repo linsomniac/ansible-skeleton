@@ -1,0 +1,14 @@
+---
+
+#  This is where the main tasks for this role are defined
+
+- name: Install packages
+  apt: name={{ item }} state=present
+  when: ansible_os_family == "Debian"
+
+  with_items:
+    - screen
+
+- include: ntp.yml
+- include: users.yml
+- include: vim.yml
