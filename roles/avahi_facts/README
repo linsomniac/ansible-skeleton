@@ -1,0 +1,77 @@
+To use this role, put this fairly early in your playbook:
+
+- name: Packages required for avahi-browse
+  apt: name=avahi-utils state=present
+
+- name: Gather avahi facts
+  avahi_facts:
+
+And on servers deploy avahi-daemon and then put files in /etc/avahi/services,
+for example:
+
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+ <name replace-wildcards="yes">NTP on %h</name>
+ <service protocol="ipv4">
+  <type>_ntp._udp</type>
+  <port>123</port>
+  <txt-record>ansible_tag=ntpserver</txt-record>
+ </service>
+</service-group>
+
+Those txt-record line(s) (there can be more than one), are what signals to
+Ansible that it can be used.  Now in your ansible facts you will have access
+to these Zeroconf records.  For example, here a "- debug" output I get on
+my network:
+
+"avahi_tags": {
+    "ntpserver": [
+        {
+            "address": "10.1.1.1",
+            "ansible_tags": [
+                "ntpserver"
+            ],
+            "domain": "local",
+            "hostname": "fw1.local",
+            "interface": "eth0",
+            "name": "NTP\\032on\\032fw1",
+            "port": "123",
+            "protocol": "IPv4",
+            "txt": "\"ansible_tag=ntpserver\"",
+            "type": "NTP Time Server"
+        },
+        {
+            "address": "10.1.1.2",
+            "ansible_tags": [
+                "ntpserver"
+            ],
+            "domain": "local",
+            "hostname": "fw2.local",
+            "interface": "eth0",
+            "name": "NTP\\032on\\032fw2",
+            "port": "123",
+            "protocol": "IPv4",
+            "txt": "\"ansible_tag=ntpserver\"",
+            "type": "NTP Time Server"
+        }
+    ]
+}
+
+For example, in my ntp.conf file, I can do:
+
+driftfile /var/lib/ntp/ntp.drift
+statistics loopstats peerstats clockstats
+filegen loopstats file loopstats type day enable
+filegen peerstats file peerstats type day enable
+filegen clockstats file clockstats type day enable
+{% if avahi_tags.get('ntpserver') %}
+{% for entry in avahi_tags.ntpserver %}
+server {{ entry.hostname }} iburst
+{% endfor %}
+{% endif %}
+restrict -4 default kod notrap nomodify nopeer noquery
+restrict -6 default kod notrap nomodify nopeer noquery
+restrict 127.0.0.1
+restrict ::1
+

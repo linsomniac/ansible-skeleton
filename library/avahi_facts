@@ -1,0 +1,74 @@
+#!/usr/bin/python
+
+DOCUMENTATION = '''
+---
+module: avahi_facts
+short_description: Gather facts from Avahi
+description:
+    - Gather facts from Avahi
+author: Sean Reifschneider
+options:
+'''
+
+EXAMPLES = '''
+- avahi_facts:
+'''
+
+from ansible.module_utils.basic import *  # noqa
+import subprocess
+import re
+from collections import defaultdict
+
+
+def parse_txt(s):
+    ret = []
+    while True:
+        m = re.match('^"([^"]+)"(.*)$', s)
+        if not m:
+            break
+        txt, s = m.groups()
+        s = s.lstrip()
+        if (
+                txt.startswith('ansible_tag=') or
+                txt.startswith('ansible-tag=') or
+                txt.startswith('ansibletag=')):
+            ret.append(txt.split('=', 1)[1])
+
+    return ret
+
+
+def get_avahi_facts():
+    ret = defaultdict(list)
+    browser = subprocess.check_output([
+        'avahi-browse', '--all', '--resolve', '--terminate', '--parsable'])
+
+    for line in browser.split('\n'):
+        m = re.match(
+            r'=;(?P<interface>[^;]*);(?P<protocol>IPv[46]);'
+            r'(?P<name>[^;]*);(?P<type>[^;]*);'
+            r'(?P<domain>[^;]*);(?P<hostname>[^;]*);'
+            r'(?P<address>[^;]*);(?P<port>[^;]+);(?P<txt>[^;]*)$', line)
+        if not m:
+            continue
+        txt = parse_txt(m.group('txt'))
+        if not txt:
+            continue
+
+        for tag in txt:
+            entry = dict(m.groupdict())
+            entry.update({'ansible_tags': txt})
+            ret[tag].append(entry)
+            ret[tag] = sorted(ret[tag], key=lambda x: x['hostname'])
+
+    return ret
+
+
+def main():
+    module = AnsibleModule(argument_spec=dict(), supports_check_mode=True)
+
+    facts = get_avahi_facts()
+
+    facts = {'avahi_facts_set': True, 'avahi_tags': facts}
+    module.exit_json(changed=False, ansible_facts=facts)
+
+main()
