@@ -1,0 +1,132 @@
+#!/usr/bin/env python
+
+DOCUMENTATION = '''
+---
+module: sambauser
+short_description: User management for Samba
+description:
+    - Manage users and passwords for Samba
+author: Sean Reifschneider
+options:
+  name:
+    description:
+      - Name of the user
+    required: true
+  password:
+    description:
+      - Encoded password for the user
+    required: false
+  state:
+    description: Whether the account should exist or not.
+    default: "present"
+    choices: [ present, absent ]
+'''
+
+EXAMPLES = '''
+#  Create a user:
+- sambauser: name=sean password=6AA4CD3491636689BBAE6BFA25A206B
+
+#  Remove a user:
+- sambauser: name=sean ensure=absent
+'''
+
+from ansible.module_utils.basic import *  # noqa
+import string
+import random
+import subprocess
+
+
+def set_password(name, uid, password):
+    from tempfile import NamedTemporaryFile
+    tfp = NamedTemporaryFile()
+    tfp.write(
+        '%s:%s:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:%s'
+        ':[U          ]:LCT-556CC038:\n' % (name, uid, password))
+    tfp.flush()
+
+    fp = subprocess.Popen(
+        ['pdbedit', '--import', 'smbpasswd:%s' % tfp.name],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    data = fp.communicate()
+    retcode = fp.wait()
+    if retcode != 0:
+        module.fail_json(
+            name=name, msg='Error importing password: %s' % str(data),
+            rc=retcode)
+
+def main():  # noqa
+    module = AnsibleModule(
+        argument_spec=dict(
+            state=dict(
+                default='present', choices=['present', 'absent'], type='str'),
+            name=dict(required=True, type='str'),
+            password=dict(default=None, type='str'),
+        ),
+        supports_check_mode=True,
+    )
+
+    name = module.params['name']
+    state = module.params['state']
+    password = module.params['password']
+
+    fp = subprocess.Popen(
+        ['pdbedit', '-l', '-u', name],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    data = fp.communicate()
+    retcode = fp.wait()
+    user_exists = retcode == 0
+
+    changed = False
+    if (
+            (user_exists and state == 'absent') or
+            (not user_exists and state == 'present')):
+        changed = True
+
+    if module.check_mode:
+        module.exit_json(changed=changed)
+    if not changed:
+        module.exit_json(changed=False)
+
+    result = {}
+    if user_exists and state == 'absent':
+        fp = subprocess.Popen(
+            ['pdbedit', '--delete', '-u', name],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        data = fp.communicate()
+        retcode = fp.wait()
+        if retcode == 0:
+            result['msg'] = 'Successfully deleted "%s"' % name
+        else:
+            module.fail_json(
+                name=name, msg='Error: %s' % str(data), rc=retcode)
+    if not user_exists and state == 'present':
+        temp_password = ''.join([
+            random.choice(string.uppercase + string.lowercase)
+            for x in range(15)])
+
+        fp = subprocess.Popen(
+            ['pdbedit', '--create', '--password-from-stdin', '-u', name],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE)
+        data = fp.communicate('%s\n%s\n' % (temp_password, temp_password))
+        retcode = fp.wait()
+        if retcode != 0:
+            module.fail_json(
+                name=name, msg='Error adding user: %s' % str(data), rc=retcode)
+
+        fp = subprocess.Popen(
+            ['pdbedit', '--list', '-u', name],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        data = fp.communicate()
+        retcode = fp.wait()
+        if retcode != 0:
+            module.fail_json(
+                name=name, msg='Error adding user: %s' % str(data), rc=retcode)
+        pdb_user, pdb_uid = data[0].split(':')[:2]
+
+        if password:
+            set_password(name, pdb_uid, password)
+
+    module.exit_json(changed=True, **result)
+
+main()
